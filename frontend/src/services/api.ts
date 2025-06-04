@@ -33,6 +33,29 @@ export type LoginCredentials = {
     password: string;
 };
 
+export type StockUpdate = {
+    id: number;
+    item_id: number;
+    quantity: number;
+    created_at: string;
+};
+
+export type Item = {
+    id: number;
+    name: string;
+    description: string;
+    price: number;
+    stock: number;
+    created_at: string;
+    updated_at: string | null;
+};
+
+export type CustomerQueryParams = {
+    skip?: number;
+    limit?: number;
+    search?: string;
+};
+
 const API_URL = 'http://localhost:8000';
 
 export const api = axios.create({
@@ -134,8 +157,8 @@ export const deleteUser = async (id: number): Promise<User> => {
 };
 
 // Customer API functions
-export const getCustomers = async (): Promise<Customer[]> => {
-    const response = await api.get<Customer[]>('/customers/');
+export const getCustomers = async (params?: CustomerQueryParams): Promise<Customer[]> => {
+    const response = await api.get<Customer[]>('/customers/', { params });
     return response.data;
 };
 
@@ -156,5 +179,47 @@ export const updateCustomer = async (id: number, customer: Omit<Customer, 'id'>)
 
 export const deleteCustomer = async (id: number): Promise<Customer> => {
     const response = await api.delete<Customer>(`/customers/${id}`);
+    return response.data;
+};
+
+export const getStockUpdates = async (): Promise<StockUpdate[]> => {
+    const response = await api.get<StockUpdate[]>('/stock-updates/');
+    return response.data;
+};
+
+export const createStockUpdate = async (stockUpdate: { item_id: number; quantity: number }): Promise<StockUpdate> => {
+    const response = await api.post<StockUpdate>('/stock-updates/', stockUpdate);
+    return response.data;
+};
+
+export const getItems = async (): Promise<Item[]> => {
+    console.log('Fetching items from API...');
+    try {
+        const response = await api.get<Item[]>('/items/');
+        console.log('Items API response:', response.data);
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching items:', error);
+        throw error;
+    }
+};
+
+export const getItem = async (id: number): Promise<Item> => {
+    const response = await api.get<Item>(`/items/${id}`);
+    return response.data;
+};
+
+export const createItem = async (item: Omit<Item, 'id' | 'created_at' | 'updated_at'>): Promise<Item> => {
+    const response = await api.post<Item>('/items/', item);
+    return response.data;
+};
+
+export const updateItem = async (id: number, item: Omit<Item, 'id' | 'created_at' | 'updated_at'>): Promise<Item> => {
+    const response = await api.put<Item>(`/items/${id}`, item);
+    return response.data;
+};
+
+export const deleteItem = async (id: number): Promise<Item> => {
+    const response = await api.delete<Item>(`/items/${id}`);
     return response.data;
 }; 

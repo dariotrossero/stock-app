@@ -74,6 +74,11 @@ const UserList = () => {
       key: 'username',
     },
     {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
+    },
+    {
       title: 'Estado',
       dataIndex: 'is_active',
       key: 'is_active',
@@ -140,6 +145,17 @@ const UserList = () => {
             name="username"
             label="Usuario"
             rules={[{ required: true, message: 'Por favor ingrese el nombre de usuario' }]}
+          >
+            <Input />
+          </Form.Item>
+
+          <Form.Item
+            name="email"
+            label="Email"
+            rules={[
+              { required: true, message: 'Por favor ingrese el email' },
+              { type: 'email', message: 'Por favor ingrese un email válido' }
+            ]}
           >
             <Input />
           </Form.Item>

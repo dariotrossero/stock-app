@@ -30,6 +30,7 @@ const { Header, Sider, Content } = Layout;
 // Componente para rutas protegidas
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
+  console.log('ProtectedRoute - isAuthenticated:', isAuthenticated());
   
   if (!isAuthenticated()) {
     return <Navigate to="/login" />;
@@ -40,6 +41,8 @@ const ProtectedRoute = ({ children }) => {
 
 const AppContent = () => {
   const { isAuthenticated, user, logout, isAdmin, token } = useAuth();
+  console.log('AppContent - Current user:', user);
+  console.log('AppContent - Is admin:', isAdmin());
   const [collapsed, setCollapsed] = useState(false);
   const [lowStockItems, setLowStockItems] = useState([]);
   const navigate = useNavigate();

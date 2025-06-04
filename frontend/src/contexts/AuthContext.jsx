@@ -9,29 +9,63 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (token) {
       localStorage.setItem('token', token);
+      // Intentar obtener los datos del usuario si no están disponibles
+      if (!user) {
+        fetchUserData();
+      }
     } else {
       localStorage.removeItem('token');
+      setUser(null);
     }
   }, [token]);
 
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem('user', JSON.stringify(user));
-    } else {
+  const fetchUserData = async () => {
+    try {
+      console.log('Obteniendo datos del usuario...');
+      console.log('Token:', token);
+      const response = await fetch('http://localhost:8000/users/me', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error response:', errorData);
+        console.error('Status:', response.status);
+        console.error('Status text:', response.statusText);
+        throw new Error(`Error al obtener datos del usuario: ${JSON.stringify(errorData)}`);
+      }
+      
+      const userData = await response.json();
+      console.log('Datos del usuario obtenidos:', userData);
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+    } catch (error) {
+      console.error('Error al obtener datos del usuario:', error);
+      setToken(null);
+      setUser(null);
+      localStorage.removeItem('token');
       localStorage.removeItem('user');
     }
-  }, [user]);
+  };
 
   const login = async (username, password) => {
     try {
       console.log('Intentando login...');
-      const formData = new FormData();
+      const formData = new URLSearchParams();
       formData.append('username', username);
       formData.append('password', password);
 
       const response = await fetch('http://localhost:8000/token', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
       });
 
       const data = await response.json();
@@ -42,7 +76,22 @@ export const AuthProvider = ({ children }) => {
       }
 
       setToken(data.access_token);
-      setUser(data.user);
+      
+      // Obtener datos del usuario después del login
+      const userResponse = await fetch('http://localhost:8000/users/me', {
+        headers: {
+          'Authorization': `Bearer ${data.access_token}`
+        }
+      });
+      
+      if (!userResponse.ok) {
+        throw new Error('Error al obtener datos del usuario');
+      }
+      
+      const userData = await userResponse.json();
+      console.log('Datos del usuario obtenidos:', userData);
+      setUser(userData);
+      
       return true;
     } catch (error) {
       console.error('Error en login:', error);

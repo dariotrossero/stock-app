@@ -41,13 +41,8 @@ const CustomerList = () => {
       setLoading(true);
       const skip = (page - 1) * pageSize;
       const limit = pageSize;
-      // Suponiendo que getCustomers puede aceptar skip y limit
       const response = await getCustomers({ skip, limit, search });
-      // Si el backend retorna { data: [...], total: n }
-      if (response && Array.isArray(response.data)) {
-        setCustomers(response.data);
-        setTotal(response.total || response.data.length);
-      } else if (Array.isArray(response)) {
+      if (response && Array.isArray(response)) {
         setCustomers(response);
         setTotal(response.length);
       } else {
@@ -235,7 +230,6 @@ const CustomerList = () => {
             name="email"
             label="Email"
             rules={[
-              { required: true, message: "Por favor ingrese el email del cliente" },
               { type: "email", message: "Por favor ingrese un email válido" },
             ]}
           >

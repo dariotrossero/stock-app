@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
+from datetime import datetime
 
 
 class User(Base):
@@ -25,7 +26,7 @@ class Customer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    email = Column(String, unique=True, index=True)
+    email = Column(String, nullable=True)
     phone = Column(String)
     address = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -40,11 +41,15 @@ class Item(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    description = Column(String)
+    description = Column(Text)
     price = Column(Float)
-    stock = Column(Integer)
+    stock = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
+
+    # Add relationship to stock updates
+    stock_updates = relationship("StockUpdate", back_populates="item")
 
 
 class Sale(Base):
@@ -76,3 +81,15 @@ class SaleItem(Base):
     # Relationships
     sale = relationship("Sale", back_populates="items")
     item = relationship("Item")
+
+
+class StockUpdate(Base):
+    __tablename__ = "stock_updates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_id = Column(Integer, ForeignKey("items.id"))
+    quantity = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Add relationship to item
+    item = relationship("Item", back_populates="stock_updates")

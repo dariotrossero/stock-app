@@ -10,6 +10,8 @@ from passlib.context import CryptContext
 import logging
 import traceback
 from sqlalchemy import func, or_
+import os
+from dotenv import load_dotenv
 
 from . import crud, models, schemas, auth, dummy_data
 from .database import engine, get_db, SessionLocal
@@ -22,16 +24,28 @@ logger = logging.getLogger(__name__)
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
+# Configuración de JWT
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# Configuración de CORS
+origins = [
+    "http://localhost:5173",  # Frontend development server
+    "http://localhost:3000",  # Alternative frontend port
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+
 app = FastAPI(
     title="Stock App API",
     description="API for managing stock portfolio and market data",
     version="1.0.0"
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Frontend development server
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,12 +104,7 @@ async def login_for_access_token(
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "is_active": user.is_active,
-                "is_admin": user.is_admin
-            }
+            "user": user
         }
     except Exception as e:
         logger.error(f"Error en login: {str(e)}")
@@ -175,6 +184,13 @@ def delete_stock(
     if db_stock is None:
         raise HTTPException(status_code=404, detail="Stock not found")
     return db_stock
+
+
+@app.get("/users/me", response_model=schemas.User)
+async def read_users_me(
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    return current_user
 
 
 @app.get("/users/", response_model=List[schemas.User])
@@ -266,10 +282,11 @@ def create_customer(
 def read_customers(
     skip: int = 0,
     limit: int = 100,
+    search: str = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
-    customers = crud.get_customers(db, skip=skip, limit=limit)
+    customers = crud.get_customers(db, skip=skip, limit=limit, search=search)
     return customers
 
 
@@ -324,6 +341,8 @@ def read_items(
     skip: int = 0,
     limit: int = 100,
     search: str = "",
+    sort_by: str = None,
+    sort_order: str = "asc",
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
@@ -338,6 +357,15 @@ def read_items(
                     models.Item.description.ilike(search_term)
                 )
             )
+
+        # Apply sorting if sort_by is provided
+        if sort_by:
+            column = getattr(models.Item, sort_by, None)
+            if column is not None:
+                if sort_order == "desc":
+                    query = query.order_by(column.desc())
+                else:
+                    query = query.order_by(column.asc())
 
         items = query.offset(skip).limit(limit).all()
         return items
@@ -611,6 +639,36 @@ def get_monthly_stats(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener estadísticas mensuales: {str(e)}"
         )
+
+
+@app.get("/stock-updates/", response_model=List[schemas.StockUpdate])
+def read_stock_updates(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    try:
+        stock_updates = crud.get_stock_updates(db, skip=skip, limit=limit)
+        return stock_updates
+    except Exception as e:
+        logger.error(f"Error getting stock updates: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting stock updates: {str(e)}"
+        )
+
+
+@app.post("/stock-updates/", response_model=schemas.StockUpdate)
+def create_stock_update(
+    stock_update: schemas.StockUpdateCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    db_stock_update = crud.create_stock_update(db, stock_update=stock_update)
+    if db_stock_update is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return db_stock_update
 
 
 if __name__ == "__main__":

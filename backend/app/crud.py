@@ -1,6 +1,9 @@
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_
 from . import models, schemas, auth
 from .auth import get_password_hash
+from datetime import datetime
+from typing import List, Optional
 
 
 def get_user(db: Session, user_id: int):
@@ -23,6 +26,7 @@ def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = get_password_hash(user.password)
     db_user = models.User(
         username=user.username,
+        email=user.email,
         hashed_password=hashed_password,
         is_active=user.is_active,
         is_admin=user.is_admin
@@ -98,8 +102,20 @@ def get_customer_by_email(db: Session, email: str):
     return db.query(models.Customer).filter(models.Customer.email == email).first()
 
 
-def get_customers(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Customer).offset(skip).limit(limit).all()
+def get_customers(db: Session, skip: int = 0, limit: int = 100, search: str = None):
+    query = db.query(models.Customer)
+
+    if search:
+        search = f"%{search}%"
+        query = query.filter(
+            or_(
+                models.Customer.name.ilike(search),
+                models.Customer.email.ilike(search),
+                models.Customer.phone.ilike(search)
+            )
+        )
+
+    return query.offset(skip).limit(limit).all()
 
 
 def create_customer(db: Session, customer: schemas.CustomerCreate):
@@ -361,3 +377,26 @@ def update_user(db: Session, user_id: int, user: schemas.UserUpdate):
         db.commit()
         db.refresh(db_user)
     return db_user
+
+
+def get_stock_updates(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.StockUpdate).options(
+        joinedload(models.StockUpdate.item)
+    ).order_by(models.StockUpdate.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def create_stock_update(db: Session, stock_update: schemas.StockUpdateCreate):
+    # Get the item
+    item = get_item(db, stock_update.item_id)
+    if not item:
+        return None
+
+    # Update the item's stock
+    item.stock += stock_update.quantity
+
+    # Create the stock update record
+    db_stock_update = models.StockUpdate(**stock_update.model_dump())
+    db.add(db_stock_update)
+    db.commit()
+    db.refresh(db_stock_update)
+    return db_stock_update

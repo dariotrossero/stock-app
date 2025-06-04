@@ -5,6 +5,7 @@ from typing import Optional, List
 
 class UserBase(BaseModel):
     username: str
+    email: str
     is_active: bool = True
     is_admin: bool = False
 
@@ -15,14 +16,15 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
+    email: Optional[str] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
 
 
 class User(UserBase):
-    id: int
-    created_at: datetime
+    id: Optional[int] = None
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     class Config:
@@ -61,7 +63,7 @@ class Stock(StockBase):
 # Customer schemas
 class CustomerBase(BaseModel):
     name: str
-    email: str
+    email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
 
@@ -159,3 +161,21 @@ class TopProduct(BaseModel):
 class MonthlyStats(BaseModel):
     total_sales: int
     total_income: float
+
+
+class StockUpdateBase(BaseModel):
+    item_id: int
+    quantity: int
+
+
+class StockUpdateCreate(StockUpdateBase):
+    pass
+
+
+class StockUpdate(StockUpdateBase):
+    id: int
+    created_at: datetime
+    item: Item
+
+    class Config:
+        from_attributes = True

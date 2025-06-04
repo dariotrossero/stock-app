@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Space, Badge, Tooltip } from 'antd';
-import { EditOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Space, Badge, Tooltip, Select } from 'antd';
+import { EditOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, ExclamationCircleOutlined, InboxOutlined } from '@ant-design/icons';
 import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const ItemList = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [items, setItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -16,12 +18,21 @@ const ItemList = () => {
   const [isStockModalVisible, setIsStockModalVisible] = useState(false);
   const [highlightedItemId, setHighlightedItemId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingStockUpdates, setLoadingStockUpdates] = useState(false);
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 100,
     total: 0
   });
+  const [sorting, setSorting] = useState({
+    field: null,
+    order: null
+  });
   const nameInputRef = useRef(null);
+  const [isStockUpdateModalVisible, setIsStockUpdateModalVisible] = useState(false);
+  const [stockUpdateForm] = Form.useForm();
+  const [stockUpdates, setStockUpdates] = useState([]);
+  const [allItems, setAllItems] = useState([]);
 
   useEffect(() => {
     const handleKeyPress = (event) => {
@@ -42,11 +53,10 @@ const ItemList = () => {
     };
   }, []);
 
-  const fetchItems = async (page = 1, pageSize = 100, search = '') => {
+  const fetchItems = async (page = 1, pageSize = 100, search = '', sortField = null, sortOrder = null) => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      console.log('Current token:', token);
       
       if (!token) {
         message.error('No authentication token found. Please log in.');
@@ -54,67 +64,49 @@ const ItemList = () => {
         return;
       }
 
-      console.log('Fetching items...');
-      console.log('API URL:', api.defaults.baseURL + '/items/');
-      console.log('Request headers:', api.defaults.headers);
-      
       const skip = (page - 1) * pageSize;
-      const response = await api.get(`/items/?skip=${skip}&limit=${pageSize}&search=${search}`);
-      console.log('Full API Response:', response);
-      console.log('API Response status:', response.status);
-      console.log('API Response headers:', response.headers);
-      console.log('API Response data:', response.data);
+      let url = `/items/?skip=${skip}&limit=${pageSize}&search=${search}`;
+      
+      if (sortField && sortOrder) {
+        const order = sortOrder === 'ascend' ? 'asc' : 'desc';
+        url += `&sort_by=${sortField}&sort_order=${order}`;
+      }
 
+      const response = await api.get(url);
+      
       if (!response.data) {
         throw new Error('No data received from server');
       }
 
       const itemsData = response.data;
-      console.log('Items data before processing:', itemsData);
-
+      
       if (!Array.isArray(itemsData)) {
         console.error('Invalid items data format:', itemsData);
         throw new Error('Invalid data format received from server');
       }
       
-      // Process items to ensure all fields are properly formatted
-      const processedItems = itemsData.map(item => {
-        const processed = {
-          id: item.id,
-          name: item.name || '',
-          description: item.description || '',
-          price: parseFloat(item.price) || 0,
-          stock: parseInt(item.stock) || 0,
-          created_at: item.created_at,
-          updated_at: item.updated_at
-        };
-        console.log('Processed item:', processed);
-        return processed;
-      });
-
-      console.log('Final processed items:', processedItems);
+      const processedItems = itemsData.map(item => ({
+        id: item.id,
+        name: item.name || '',
+        description: item.description || '',
+        price: parseFloat(item.price) || 0,
+        stock: parseInt(item.stock) || 0,
+        created_at: item.created_at,
+        updated_at: item.updated_at
+      }));
       
-      // Update pagination
       setPagination(prev => ({
         ...prev,
         current: page,
         total: processedItems.length === pageSize ? page * pageSize + 1 : page * pageSize
       }));
       
-      // Update items state
       setItems(processedItems);
       setFilteredItems(processedItems);
 
       return processedItems;
     } catch (error) {
       console.error('Error fetching items:', error);
-      console.error('Error details:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
-        stack: error.stack
-      });
-      
       if (error.response?.status === 401) {
         message.error('Session expired. Please log in again.');
         localStorage.removeItem('token');
@@ -128,26 +120,69 @@ const ItemList = () => {
     }
   };
 
-  // Add useEffect for initial data loading
+  const fetchAllItems = async () => {
+    try {
+      const response = await api.get('/items/?skip=0&limit=1000'); // Fetch a large number of items
+      if (response.data && Array.isArray(response.data)) {
+        const processedItems = response.data.map(item => ({
+          id: item.id,
+          name: item.name || '',
+          description: item.description || '',
+          price: parseFloat(item.price) || 0,
+          stock: parseInt(item.stock) || 0,
+          created_at: item.created_at,
+          updated_at: item.updated_at
+        }));
+        setAllItems(processedItems);
+        return processedItems;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching all items:', error);
+      return [];
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
-      await fetchItems(1, pagination.pageSize, searchText);
-      // Fetch low stock items separately
+      setLoading(true);
+      setLoadingStockUpdates(true);
       try {
-        const lowStockResponse = await api.get('/items/low-stock');
-        console.log('Low stock response:', lowStockResponse);
-        if (lowStockResponse.data && Array.isArray(lowStockResponse.data)) {
-          console.log('Setting low stock items:', lowStockResponse.data);
-          setLowStockItems(lowStockResponse.data);
+        // Load all items for stock updates
+        await fetchAllItems();
+        
+        // Load paginated items for the table
+        await fetchItems(1, pagination.pageSize, searchText);
+        
+        // Load stock updates
+        try {
+          const stockUpdatesResponse = await api.get('/stock-updates/');
+          if (stockUpdatesResponse.data && Array.isArray(stockUpdatesResponse.data)) {
+            setStockUpdates(stockUpdatesResponse.data);
+          }
+        } catch (error) {
+          console.error('Error fetching stock updates:', error);
+        }
+
+        // Load low stock items
+        try {
+          const lowStockResponse = await api.get('/items/low-stock');
+          if (lowStockResponse.data && Array.isArray(lowStockResponse.data)) {
+            setLowStockItems(lowStockResponse.data);
+          }
+        } catch (error) {
+          console.error('Error fetching low stock items:', error);
         }
       } catch (error) {
-        console.error('Error fetching low stock items:', error);
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+        setLoadingStockUpdates(false);
       }
     };
     loadData();
   }, [searchText]);
 
-  // Add useEffect for state logging
   useEffect(() => {
     console.log('State update - Current items:', {
       itemsCount: items.length,
@@ -290,7 +325,9 @@ const ItemList = () => {
 
   const handleTableChange = (pagination, filters, sorter) => {
     console.log('Table change:', { pagination, filters, sorter });
-    fetchItems(pagination.current, pagination.pageSize, searchText);
+    const { field, order } = sorter;
+    setSorting({ field, order });
+    fetchItems(pagination.current, pagination.pageSize, searchText, field, order);
   };
 
   const handleSearch = (value) => {
@@ -299,12 +336,72 @@ const ItemList = () => {
     setPagination(prev => ({ ...prev, current: 1 }));
   };
 
+  const handleStockUpdate = async () => {
+    try {
+      setLoadingStockUpdates(true);
+      const values = await stockUpdateForm.validateFields();
+      
+      const response = await api.post('/stock-updates/', values);
+      
+      message.success('Stock actualizado exitosamente');
+      setIsStockUpdateModalVisible(false);
+      stockUpdateForm.resetFields();
+      
+      // Refresh all items for stock updates
+      await fetchAllItems();
+      
+      // Refresh paginated items for the table
+      await fetchItems(pagination.current, pagination.pageSize, searchText);
+      
+      // Get stock updates
+      const stockUpdatesResponse = await api.get('/stock-updates/');
+      if (stockUpdatesResponse.data && Array.isArray(stockUpdatesResponse.data)) {
+        setStockUpdates(stockUpdatesResponse.data);
+      }
+      
+      // Get low stock items
+      const lowStockResponse = await api.get('/items/low-stock');
+      if (lowStockResponse.data && Array.isArray(lowStockResponse.data)) {
+        setLowStockItems(lowStockResponse.data);
+      }
+    } catch (error) {
+      console.error('Error updating stock:', error);
+      message.error('Error al actualizar el stock');
+    } finally {
+      setLoadingStockUpdates(false);
+    }
+  };
+
+  const handleLoadDummyData = async () => {
+    try {
+      console.log('Intentando cargar datos de prueba...');
+      const response = await fetch('http://localhost:8000/load-dummy-data/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al cargar datos de prueba');
+      }
+
+      message.success('Datos de prueba cargados exitosamente');
+      // Recargar los datos
+      await fetchItems(1, pagination.pageSize, searchText);
+      await fetchAllItems();
+    } catch (error) {
+      console.error('Error al cargar datos de prueba:', error);
+      message.error('Error al cargar datos de prueba');
+    }
+  };
+
   const columns = [
     {
       title: 'Nombre',
       dataIndex: 'name',
       key: 'name',
-      sorter: (a, b) => a.name.localeCompare(b.name),
+      sorter: true,
       sortDirections: ['ascend', 'descend'],
       render: (text, record) => (
         <span style={{
@@ -321,11 +418,7 @@ const ItemList = () => {
       title: 'Descripción',
       dataIndex: 'description',
       key: 'description',
-      sorter: (a, b) => {
-        const descA = a.description || '';
-        const descB = b.description || '';
-        return descA.localeCompare(descB);
-      },
+      sorter: true,
       sortDirections: ['ascend', 'descend'],
       render: (text, record) => (
         <span style={{
@@ -342,7 +435,7 @@ const ItemList = () => {
       title: 'Precio',
       dataIndex: 'price',
       key: 'price',
-      sorter: (a, b) => a.price - b.price,
+      sorter: true,
       sortDirections: ['ascend', 'descend'],
       render: (value, record) => (
         <span style={{
@@ -359,7 +452,7 @@ const ItemList = () => {
       title: 'Stock',
       dataIndex: 'stock',
       key: 'stock',
-      sorter: (a, b) => a.stock - b.stock,
+      sorter: true,
       sortDirections: ['ascend', 'descend'],
       render: (value, record) => (
         <span style={{
@@ -408,27 +501,8 @@ const ItemList = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Input
-          placeholder="Buscar productos..."
-          prefix={<SearchOutlined />}
-          value={searchText}
-          onChange={(e) => handleSearch(e.target.value)}
-          style={{ width: 300 }}
-          allowClear
-        />
-        <Space>
-          {lowStockItems.length > 0 && (
-            <Tooltip title="Ver productos con stock bajo">
-              <Badge count={lowStockItems.length} size="small">
-                <Button
-                  type="text"
-                  icon={<ExclamationCircleOutlined style={{ color: '#faad14' }} />}
-                  onClick={() => setIsStockModalVisible(true)}
-                />
-              </Badge>
-            </Tooltip>
-          )}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -436,7 +510,32 @@ const ItemList = () => {
           >
             Nuevo Producto
           </Button>
-        </Space>
+          <Input
+            placeholder="Buscar productos..."
+            value={searchText}
+            onChange={(e) => handleSearch(e.target.value)}
+            style={{ width: 200 }}
+            prefix={<SearchOutlined />}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Button
+            type="primary"
+            icon={<InboxOutlined />}
+            onClick={() => setIsStockUpdateModalVisible(true)}
+          >
+            Actualizar Stock
+          </Button>
+          {isAdmin() && (
+            <Button
+              type="primary"
+              onClick={handleLoadDummyData}
+              style={{ backgroundColor: '#faad14', borderColor: '#faad14' }}
+            >
+              Cargar Datos de Prueba
+            </Button>
+          )}
+        </div>
       </div>
 
       <Table
@@ -534,6 +633,94 @@ const ItemList = () => {
           pagination={false}
         />
       </Modal>
+
+      {/* Modal de Actualización de Stock */}
+      <Modal
+        title="Actualizar Stock"
+        open={isStockUpdateModalVisible}
+        onOk={handleStockUpdate}
+        onCancel={() => {
+          setIsStockUpdateModalVisible(false);
+          stockUpdateForm.resetFields();
+        }}
+      >
+        <Form
+          form={stockUpdateForm}
+          layout="vertical"
+        >
+          <Form.Item
+            name="item_id"
+            label="Producto"
+            rules={[{ required: true, message: 'Por favor seleccione un producto' }]}
+          >
+            <Select
+              placeholder="Seleccione un producto"
+              showSearch
+              optionFilterProp="children"
+            >
+              {allItems.map(item => (
+                <Select.Option key={item.id} value={item.id}>
+                  {item.name} (Stock actual: {item.stock})
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="quantity"
+            label="Cantidad"
+            rules={[{ required: true, message: 'Por favor ingrese la cantidad' }]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              placeholder="Ingrese un número positivo para agregar o negativo para reducir"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Tabla de Historial de Actualizaciones de Stock */}
+      <div style={{ marginTop: 24 }}>
+        <h3>Historial de Actualizaciones de Stock</h3>
+        <Table
+          dataSource={stockUpdates}
+          rowKey="id"
+          pagination={false}
+          loading={loadingStockUpdates}
+          columns={[
+            {
+              title: 'Producto',
+              dataIndex: 'item_id',
+              key: 'item_id',
+              render: (itemId) => {
+                const item = allItems.find(i => Number(i.id) === Number(itemId));
+                if (loadingStockUpdates) {
+                  return 'Cargando...';
+                }
+                if (!item) {
+                  return 'Producto no encontrado';
+                }
+                return item.name;
+              }
+            },
+            {
+              title: 'Cantidad',
+              dataIndex: 'quantity',
+              key: 'quantity',
+              render: (quantity) => (
+                <span style={{ color: quantity > 0 ? '#52c41a' : '#ff4d4f' }}>
+                  {quantity > 0 ? `+${quantity}` : quantity}
+                </span>
+              )
+            },
+            {
+              title: 'Fecha',
+              dataIndex: 'created_at',
+              key: 'created_at',
+              render: (date) => new Date(date).toLocaleString()
+            }
+          ]}
+        />
+      </div>
     </div>
   );
 };

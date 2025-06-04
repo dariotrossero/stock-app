@@ -1,156 +1,141 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+    Container,
     Box,
+    Typography,
     TextField,
     Button,
-    Typography,
     Paper,
 } from '@mui/material';
-import { login } from '../services/api';
-import type { LoginCredentials } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
     const navigate = useNavigate();
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
+    const { setToken, setUser } = useAuth();
+    const [formData, setFormData] = useState({
+        username: '',
+        password: '',
+    });
     const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
-        setIsLoading(true);
-        
+
         try {
             console.log('Attempting login...');
-            const response = await login({ username, password });
-            console.log('Login successful:', response);
-            localStorage.setItem('token', response.access_token);
-            window.location.href = '/stocks';
-        } catch (err: any) {
-            console.error('Login error:', err);
-            const errorMessage = err.response?.data?.detail || 
-                               (err.response?.data?.msg ? err.response.data.msg[0] : 'Failed to login. Please try again.');
-            setError(errorMessage);
-        } finally {
-            setIsLoading(false);
+            const response = await fetch('http://localhost:8000/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    username: formData.username,
+                    password: formData.password,
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Login successful, data:', data);
+                setToken(data.access_token);
+                if (data.user) {
+                    console.log('Setting user from login response:', data.user);
+                    setUser(data.user);
+                } else {
+                    console.log('No user data in login response, fetching user data...');
+                    const userResponse = await fetch('http://localhost:8000/users/me', {
+                        headers: {
+                            'Authorization': `Bearer ${data.access_token}`
+                        }
+                    });
+                    if (userResponse.ok) {
+                        const userData = await userResponse.json();
+                        console.log('User data fetched:', userData);
+                        setUser(userData);
+                    }
+                }
+                navigate('/');
+            } else {
+                const errorData = await response.json();
+                console.error('Login failed:', errorData);
+                setError(errorData.detail || 'Error al iniciar sesión');
+            }
+        } catch (err) {
+            console.error('Error during login:', err);
+            setError('Error al conectar con el servidor');
         }
     };
 
     return (
-        <Box
-            sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '100%',
-                width: '100%',
-                py: 4
-            }}
-        >
-            <Paper
-                elevation={3}
+        <Container component="main" maxWidth="xs">
+            <Box
                 sx={{
-                    p: 4,
-                    width: '100%',
-                    maxWidth: 400,
+                    marginTop: 8,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 3
+                    alignItems: 'center',
                 }}
             >
-                <Box sx={{ textAlign: 'center', mb: 2 }}>
-                    <Typography 
-                        component="h1" 
-                        variant="h4" 
-                        sx={{ 
-                            fontWeight: 600,
-                            color: 'primary.main',
-                            mb: 1
-                        }}
-                    >
-                        Welcome Back
-                    </Typography>
-                    <Typography 
-                        variant="body1" 
-                        color="text.secondary"
-                    >
-                        Sign in to your account
-                    </Typography>
-                </Box>
-
-                <Box
-                    component="form"
-                    onSubmit={handleSubmit}
+                <Paper
+                    elevation={3}
                     sx={{
+                        padding: 4,
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: 2
+                        alignItems: 'center',
+                        width: '100%',
                     }}
                 >
-                    <TextField
-                        required
-                        fullWidth
-                        id="username"
-                        label="Username"
-                        name="username"
-                        autoComplete="username"
-                        autoFocus
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        disabled={isLoading}
-                        sx={{
-                            '& .MuiOutlinedInput-root': {
-                                borderRadius: 2
+                    <Typography component="h1" variant="h5">
+                        Iniciar Sesión
+                    </Typography>
+                    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
+                        <TextField
+                            margin="normal"
+                            required
+                            fullWidth
+                            id="username"
+                            label="Usuario"
+                            name="username"
+                            autoComplete="username"
+                            autoFocus
+                            value={formData.username}
+                            onChange={(e) =>
+                                setFormData({ ...formData, username: e.target.value })
                             }
-                        }}
-                    />
-                    <TextField
-                        required
-                        fullWidth
-                        name="password"
-                        label="Password"
-                        type="password"
-                        id="password"
-                        autoComplete="current-password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        disabled={isLoading}
-                        sx={{
-                            '& .MuiOutlinedInput-root': {
-                                borderRadius: 2
+                        />
+                        <TextField
+                            margin="normal"
+                            required
+                            fullWidth
+                            name="password"
+                            label="Contraseña"
+                            type="password"
+                            id="password"
+                            autoComplete="current-password"
+                            value={formData.password}
+                            onChange={(e) =>
+                                setFormData({ ...formData, password: e.target.value })
                             }
-                        }}
-                    />
-                    {error && (
-                        <Typography 
-                            color="error" 
-                            sx={{ 
-                                textAlign: 'center',
-                                fontSize: '0.875rem'
-                            }}
+                        />
+                        {error && (
+                            <Typography color="error" sx={{ mt: 2 }}>
+                                {error}
+                            </Typography>
+                        )}
+                        <Button
+                            type="submit"
+                            fullWidth
+                            variant="contained"
+                            sx={{ mt: 3, mb: 2 }}
                         >
-                            {error}
-                        </Typography>
-                    )}
-                    <Button
-                        type="submit"
-                        fullWidth
-                        variant="contained"
-                        disabled={isLoading}
-                        sx={{
-                            mt: 2,
-                            py: 1.5,
-                            fontSize: '1rem',
-                            fontWeight: 600,
-                            borderRadius: 2
-                        }}
-                    >
-                        {isLoading ? 'Signing in...' : 'Sign In'}
-                    </Button>
-                </Box>
-            </Paper>
-        </Box>
+                            Iniciar Sesión
+                        </Button>
+                    </Box>
+                </Paper>
+            </Box>
+        </Container>
     );
 } 
