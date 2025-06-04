@@ -447,7 +447,8 @@ def create_dummy_data():
                 user=user,
                 items=sale_items,
                 total_amount=total_amount,
-                created_at=created_at
+                created_at=created_at,
+                paid=False,
             )
             return sale
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Table, Button, Modal, Form, Select, InputNumber, message, Space, Descriptions, AutoComplete, Badge, Tooltip, Input, DatePicker } from 'antd';
+import { Table, Button, Modal, Form, Select, InputNumber, message, Space, Descriptions, AutoComplete, Badge, Tooltip, Input, DatePicker, Checkbox, Switch } from 'antd';
 import { PlusOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
@@ -332,11 +332,12 @@ const SaleList = () => {
           item_id: parseInt(item.item_id),
           quantity: parseInt(item.quantity),
           unit_price: parseFloat(item.unit_price.toFixed(2))
-        }))
+        })),
+        paid: values.paid || false
       };
 
       if (isEditing) {
-        const response = await api.put(`/sales/${selectedSale.id}/`, saleData);
+        const response = await api.put(`/sales/${selectedSale.id}`, saleData);
         message.success('Venta actualizada exitosamente');
       } else {
         saleData.customer_id = parseInt(values.customer_id);
@@ -360,12 +361,13 @@ const SaleList = () => {
             item_id: parseInt(item.item_id),
             quantity: parseInt(item.quantity),
             unit_price: parseFloat(item.unit_price.toFixed(2))
-          }))
+          })),
+          paid: saleData.paid
         };
         
         console.log('Datos de la venta a enviar (formateados):', JSON.stringify(formattedSaleData, null, 2));
         try {
-          const response = await api.post('/sales/', formattedSaleData);
+          const response = await api.post('/sales', formattedSaleData);
           console.log('Respuesta del servidor:', response.data);
           message.success('Venta creada exitosamente');
           // Establecer el ID de la venta recién creada para resaltarla
@@ -477,6 +479,16 @@ const SaleList = () => {
       sortDirections: ['ascend', 'descend']
     },
     {
+      title: 'Estado de Pago',
+      dataIndex: 'paid',
+      key: 'paid',
+      render: (paid) => (
+        <Badge status={paid ? "success" : "warning"} text={paid ? "Pagado" : "Pendiente"} />
+      ),
+      sorter: (a, b) => a.paid - b.paid,
+      sortDirections: ['ascend', 'descend']
+    },
+    {
       title: 'Acciones',
       key: 'actions',
       render: (_, record) => (
@@ -580,6 +592,9 @@ const SaleList = () => {
                 })()
               }</Descriptions.Item>
               <Descriptions.Item label="Total">${selectedSale.total_amount.toFixed(2)}</Descriptions.Item>
+              <Descriptions.Item label="Estado de Pago">
+                <Badge status={selectedSale.paid ? "success" : "warning"} text={selectedSale.paid ? "Pagado" : "Pendiente"} />
+              </Descriptions.Item>
             </Descriptions>
 
             <div style={{ marginTop: 24 }}>
@@ -633,151 +648,164 @@ const SaleList = () => {
         <Form
           form={form}
           layout="vertical"
+          onFinish={handleSubmit}
+          initialValues={selectedSale}
         >
-          {!isEditing && (
-            <Form.Item
-              name="customer_id"
-              label="Cliente"
-              rules={[{ required: true, message: 'Por favor seleccione un cliente' }]}
+          <Form.Item
+            name="customer_id"
+            label="Cliente"
+            rules={[{ required: true, message: 'Por favor seleccione un cliente' }]}
+          >
+            <Select
+              ref={customerSelectRef}
+              placeholder="Seleccione un cliente"
+              showSearch
+              optionFilterProp="children"
             >
-              <Select
-                ref={customerSelectRef}
-                showSearch
-                placeholder="Buscar cliente..."
-                optionFilterProp="label"
-                filterOption={(input, option) =>
-                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                }
-                options={customers.map(customer => ({
-                  value: customer.id,
-                  label: `${customer.name} (${customer.email})`
-                }))}
-                autoFocus
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          )}
+              {customers.map(customer => (
+                <Select.Option key={customer.id} value={customer.id}>
+                  {customer.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
 
-          {saleItems.map((item, index) => {
-            const selectedProduct = items.find(p => p.id === item.item_id);
-            return (
-              <Space key={index} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
-                <AutoComplete
-                  ref={ref => autoCompleteRefs.current[index] = ref}
-                  style={{ width: 300 }}
-                  placeholder="Buscar producto..."
-                  value={item.item_name}
-                  options={items
-                    .filter(product => product.stock > 0)
-                    .map(product => ({
-                      value: product.name,
-                      label: (
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{product.name}</span>
-                          <span style={{ color: '#888' }}>
-                            ${product.price} (Stock: {product.stock})
-                          </span>
-                        </div>
-                      ),
-                      product: product
-                    }))}
-                  onSelect={(value, option) => {
-                    const selectedProduct = option.product;
-                    if (selectedProduct) {
-                      updateSaleItem(index, 'item_id', selectedProduct.id);
-                    }
-                  }}
-                  onChange={(value) => {
-                    // Solo actualizar el nombre si no hay un producto seleccionado
-                    if (!item.item_id) {
-                      updateSaleItem(index, 'item_name', value);
-                    }
-                  }}
-                  filterOption={(inputValue, option) => {
-                    const productName = option.value.toLowerCase();
-                    const searchTerm = inputValue.toLowerCase();
-                    return productName.includes(searchTerm);
-                  }}
-                  notFoundContent="No se encontraron productos"
-                  allowClear
-                  onClear={() => {
-                    updateSaleItem(index, 'item_id', null);
-                    updateSaleItem(index, 'item_name', '');
-                    updateSaleItem(index, 'unit_price', 0);
-                    updateSaleItem(index, 'quantity', 1);
-                    updateSaleItem(index, 'max_quantity', 0);
-                  }}
-                />
-                <InputNumber
-                  min={1}
-                  max={item.max_quantity}
-                  value={item.quantity || 1}
-                  onChange={(value) => {
-                    const maxQuantity = item.max_quantity || 0;
-                    if (isNaN(value)) {
-                      message.error('Por favor ingrese un valor numérico válido');
-                      updateSaleItem(index, 'quantity', 1);
-                    } else if (value > maxQuantity) {
-                      message.warning(`Stock disponible: ${maxQuantity} unidades`);
-                      updateSaleItem(index, 'quantity', maxQuantity);
-                    } else {
-                      updateSaleItem(index, 'quantity', value);
-                    }
-                  }}
-                  onKeyPress={(e) => {
-                    if (!/^\d$/.test(e.key)) {
-                      e.preventDefault();
-                      message.error('Por favor ingrese solo números');
-                    } else {
-                      const value = Number(e.target.value + e.key);
-                      const maxQuantity = item.max_quantity || 0;
-                      if (value > maxQuantity) {
-                        e.preventDefault();
-                        message.warning(`Stock disponible: ${maxQuantity} unidades`);
-                      }
-                    }
-                  }}
-                  placeholder="Cantidad"
-                  disabled={!item.item_id}
-                  style={{ width: 100 }}
-                  controls={true}
-                />
-                <InputNumber
-                  min={0}
-                  step={0.01}
-                  value={item.unit_price}
-                  onChange={(value) => updateSaleItem(index, 'unit_price', value)}
-                  placeholder="Precio unitario"
-                  prefix="$"
-                  disabled={!item.item_id}
-                  style={{ width: 120 }}
-                />
-                {item.item_id && selectedProduct ? (
-                  <span style={{ minWidth: '150px' }}>
-                    Stock disponible: {selectedProduct.stock}
-                  </span>
-                ) : null}
-                <span>Subtotal: ${(item.subtotal || 0).toFixed(2)}</span>
-                <Button
-                  type="text"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() => removeSaleItem(index)}
-                />
-              </Space>
-            );
-          })}
+         
 
-          <div style={{ marginTop: 16, marginBottom: 16 }}>
-            <Button type="dashed" onClick={addSaleItem} block icon={<PlusOutlined />}>
-              Agregar Producto
-            </Button>
-          </div>
+          <Form.List name="items">
+            {(fields, { add, remove }) => (
+              <>
+                {saleItems.map((item, index) => {
+                  const selectedProduct = items.find(p => p.id === item.item_id);
+                  return (
+                    <Space key={index} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                      <AutoComplete
+                        ref={ref => autoCompleteRefs.current[index] = ref}
+                        style={{ width: 300 }}
+                        placeholder="Buscar producto..."
+                        value={item.item_name}
+                        options={items
+                          .filter(product => product.stock > 0)
+                          .map(product => ({
+                            value: product.name,
+                            label: (
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{product.name}</span>
+                                <span style={{ color: '#888' }}>
+                                  ${product.price} (Stock: {product.stock})
+                                </span>
+                              </div>
+                            ),
+                            product: product
+                          }))}
+                        onSelect={(value, option) => {
+                          const selectedProduct = option.product;
+                          if (selectedProduct) {
+                            updateSaleItem(index, 'item_id', selectedProduct.id);
+                          }
+                        }}
+                        onChange={(value) => {
+                          if (!item.item_id) {
+                            updateSaleItem(index, 'item_name', value);
+                          }
+                        }}
+                        filterOption={(inputValue, option) => {
+                          const productName = option.value.toLowerCase();
+                          const searchTerm = inputValue.toLowerCase();
+                          return productName.includes(searchTerm);
+                        }}
+                        notFoundContent="No se encontraron productos"
+                        allowClear
+                        onClear={() => {
+                          updateSaleItem(index, 'item_id', null);
+                          updateSaleItem(index, 'item_name', '');
+                          updateSaleItem(index, 'unit_price', 0);
+                          updateSaleItem(index, 'quantity', 1);
+                          updateSaleItem(index, 'max_quantity', 0);
+                        }}
+                      />
+                      <InputNumber
+                        min={1}
+                        max={item.max_quantity}
+                        value={item.quantity || 1}
+                        onChange={(value) => {
+                          const maxQuantity = item.max_quantity || 0;
+                          if (isNaN(value)) {
+                            message.error('Por favor ingrese un valor numérico válido');
+                            updateSaleItem(index, 'quantity', 1);
+                          } else if (value > maxQuantity) {
+                            message.warning(`Stock disponible: ${maxQuantity} unidades`);
+                            updateSaleItem(index, 'quantity', maxQuantity);
+                          } else {
+                            updateSaleItem(index, 'quantity', value);
+                          }
+                        }}
+                        onKeyPress={(e) => {
+                          if (!/^\d$/.test(e.key)) {
+                            e.preventDefault();
+                            message.error('Por favor ingrese solo números');
+                          } else {
+                            const value = Number(e.target.value + e.key);
+                            const maxQuantity = item.max_quantity || 0;
+                            if (value > maxQuantity) {
+                              e.preventDefault();
+                              message.warning(`Stock disponible: ${maxQuantity} unidades`);
+                            }
+                          }
+                        }}
+                        placeholder="Cantidad"
+                        disabled={!item.item_id}
+                        style={{ width: 100 }}
+                        controls={true}
+                      />
+                      <InputNumber
+                        min={0}
+                        step={0.01}
+                        value={item.unit_price}
+                        onChange={(value) => updateSaleItem(index, 'unit_price', value)}
+                        placeholder="Precio unitario"
+                        prefix="$"
+                        disabled={!item.item_id}
+                        style={{ width: 120 }}
+                      />
+                      {item.item_id && selectedProduct ? (
+                        <span style={{ minWidth: '150px' }}>
+                          Stock disponible: {selectedProduct.stock}
+                        </span>
+                      ) : null}
+                      <span>Subtotal: ${(item.subtotal || 0).toFixed(2)}</span>
+                      <Button
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => removeSaleItem(index)}
+                      />
+                    </Space>
+                  );
+                })}
 
-          <div style={{ marginTop: 16, textAlign: 'right' }}>
-            <strong>Total: ${calculateTotal().toFixed(2)}</strong>
-          </div>
+                <div style={{ marginTop: 16, marginBottom: 16 }}>
+                  <Button type="dashed" onClick={addSaleItem} block icon={<PlusOutlined />}>
+                    Agregar Producto
+                  </Button>
+                </div>
+
+                <div style={{ marginTop: 16, textAlign: 'right' }}>
+                  <strong>Total: ${calculateTotal().toFixed(2)}</strong>
+                </div>
+              </>
+            )}
+          </Form.List>
+          <Form.Item
+            name="paid"
+            label="Estado de Pago"
+            valuePropName="checked"
+            initialValue={false}
+          >
+            <Switch checkedChildren="Pagado" unCheckedChildren="Pendiente" />
+          </Form.Item>
         </Form>
+        
       </Modal>
     </div>
   );

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, Numeric, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -11,6 +11,7 @@ class Sale(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), index=True)
     total_amount = Column(Numeric(10, 2))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    paid = Column(Boolean, default=False)
 
     # Relationships
     customer = relationship("Customer", back_populates="sales")

@@ -60,6 +60,7 @@ class Sale(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     total_amount = Column(Float)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    paid = Column(Boolean, default=False)
 
     # Relationships
     customer = relationship("Customer", back_populates="sales")

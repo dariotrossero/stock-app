@@ -255,7 +255,8 @@ def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None):
         db_sale = models.Sale(
             customer_id=sale.customer_id,
             user_id=user_id,
-            total_amount=sale.total_amount
+            total_amount=sale.total_amount,
+            paid=sale.paid
         )
         db.add(db_sale)
         db.flush()  # Get the sale ID without committing
@@ -273,8 +274,7 @@ def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None):
                 item_id=item.item_id,
                 quantity=item.quantity,
                 unit_price=item.unit_price,
-                subtotal=item.quantity * item.unit_price
-            )
+                subtotal=item.quantity * item.unit_price)
             db.add(db_sale_item)
 
             # Update item stock
@@ -356,6 +356,7 @@ def update_sale(db: Session, sale_id: int, sale: schemas.SaleUpdate):
 
         # Actualizar el monto total
         db_sale.total_amount = sale.total_amount
+        db_sale.paid = sale.paid
         db.commit()
         db.refresh(db_sale)
         return db_sale

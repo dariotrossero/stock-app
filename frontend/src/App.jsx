@@ -11,7 +11,8 @@ import {
   MenuUnfoldOutlined,
   WarningOutlined,
   LogoutOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  AccountBookOutlined
 } from '@ant-design/icons';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -19,6 +20,7 @@ import CustomerList from './components/CustomerList';
 import ItemList from './components/ItemList';
 import SaleList from './components/SaleList';
 import UserList from './components/UserList';
+import AccountStatement from './components/AccountStatement';
 import AdminRoute from './components/AdminRoute';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './App.css';
@@ -122,6 +124,11 @@ const AppContent = () => {
       icon: <ShoppingOutlined />,
       label: 'Ventas',
     },
+    {
+      key: '/account-statement',
+      icon: <AccountBookOutlined />,
+      label: 'Cuenta Corriente',
+    },
   ];
 
   if (isAdmin()) {
@@ -223,6 +230,14 @@ const AppContent = () => {
               element={
                 <ProtectedRoute>
                   <SaleList />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/account-statement"
+              element={
+                <ProtectedRoute>
+                  <AccountStatement />
                 </ProtectedRoute>
               }
             />

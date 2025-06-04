@@ -126,6 +126,7 @@ class SaleItem(SaleItemBase):
 class SaleBase(BaseModel):
     customer_id: int
     total_amount: float
+    paid: bool = False
 
 
 class SaleCreate(SaleBase):
@@ -135,6 +136,7 @@ class SaleCreate(SaleBase):
 class SaleUpdate(BaseModel):
     total_amount: float
     items: List[SaleItemCreate]
+    paid: bool = False
 
 
 class Sale(SaleBase):
@@ -143,6 +145,7 @@ class Sale(SaleBase):
     items: List[SaleItem]
     customer: Customer
     user: User
+    paid: bool
 
     class Config:
         from_attributes = True
