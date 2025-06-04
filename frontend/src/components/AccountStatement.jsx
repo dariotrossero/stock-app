@@ -1,17 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Select, Card, Descriptions, Badge, Space, Typography, DatePicker } from 'antd';
+import { Table, Select, Card, Descriptions, Badge, Space, Typography, DatePicker, Button, Modal, Form, Input, InputNumber, message } from 'antd';
 import { api } from '../services/api';
 import dayjs from 'dayjs';
+import { PlusOutlined, EyeOutlined } from '@ant-design/icons';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
+const { TextArea } = Input;
 
 const AccountStatement = () => {
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [sales, setSales] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [dateRange, setDateRange] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isPaymentModalVisible, setIsPaymentModalVisible] = useState(false);
+  const [isSaleModalVisible, setIsSaleModalVisible] = useState(false);
+  const [selectedSale, setSelectedSale] = useState(null);
+  const [paymentForm] = Form.useForm();
 
   useEffect(() => {
     fetchCustomers();
@@ -20,6 +27,7 @@ const AccountStatement = () => {
   useEffect(() => {
     if (selectedCustomer) {
       fetchCustomerSales();
+      fetchCustomerPayments();
     }
   }, [selectedCustomer, dateRange]);
 
@@ -37,11 +45,8 @@ const AccountStatement = () => {
     
     setLoading(true);
     try {
-      const response = await api.get(`/sales/`);
-      let filteredSales = response.data.filter(sale => 
-        sale.customer_id === selectedCustomer && 
-        !sale.paid
-      );
+      const response = await api.get(`/customers/${selectedCustomer}/pending-sales/`);
+      let filteredSales = response.data;
 
       if (dateRange) {
         filteredSales = filteredSales.filter(sale => {
@@ -58,8 +63,52 @@ const AccountStatement = () => {
     }
   };
 
+  const fetchCustomerPayments = async () => {
+    if (!selectedCustomer) return;
+    
+    try {
+      const response = await api.get(`/customers/${selectedCustomer}/payments/`);
+      setPayments(response.data);
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+    }
+  };
+
   const calculateTotalDebt = () => {
-    return sales.reduce((total, sale) => total + sale.total_amount, 0);
+    const totalSales = sales.reduce((total, sale) => total + sale.total_amount, 0);
+    const totalPayments = payments.reduce((total, payment) => total + payment.amount, 0);
+    return totalSales - totalPayments;
+  };
+
+  const handlePaymentSubmit = async (values) => {
+    try {
+      await api.post('/payments/', {
+        customer_id: selectedCustomer,
+        sale_id: values.sale_id || null,
+        amount: values.amount,
+        description: values.description
+      });
+
+      message.success('Pago registrado exitosamente');
+      setIsPaymentModalVisible(false);
+      paymentForm.resetFields();
+      fetchCustomerSales();
+      fetchCustomerPayments();
+    } catch (error) {
+      console.error('Error creating payment:', error);
+      message.error('Error al registrar el pago');
+    }
+  };
+
+  const handleViewSale = async (saleId) => {
+    try {
+      const response = await api.get(`/sales/${saleId}`);
+      setSelectedSale(response.data);
+      setIsSaleModalVisible(true);
+    } catch (error) {
+      console.error('Error fetching sale details:', error);
+      message.error('Error al cargar los detalles de la venta');
+    }
   };
 
   const columns = [
@@ -74,6 +123,15 @@ const AccountStatement = () => {
       title: 'Número de Venta',
       dataIndex: 'id',
       key: 'id',
+      render: (id) => (
+        <Button 
+          type="link" 
+          onClick={() => handleViewSale(id)}
+          icon={<EyeOutlined />}
+        >
+          {id}
+        </Button>
+      ),
     },
     {
       title: 'Monto',
@@ -91,6 +149,26 @@ const AccountStatement = () => {
           text={record.paid ? "Pagado" : "Pendiente"} 
         />
       ),
+    },
+  ];
+
+  const paymentColumns = [
+    {
+      title: 'Fecha',
+      dataIndex: 'payment_date',
+      key: 'payment_date',
+      render: (date) => dayjs(date).format('DD/MM/YYYY HH:mm'),
+    },
+    {
+      title: 'Monto',
+      dataIndex: 'amount',
+      key: 'amount',
+      render: (amount) => `$${amount.toFixed(2)}`,
+    },
+    {
+      title: 'Descripción',
+      dataIndex: 'description',
+      key: 'description',
     },
   ];
 
@@ -122,6 +200,16 @@ const AccountStatement = () => {
               allowClear
               format="DD/MM/YYYY"
             />
+
+            {selectedCustomer && (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setIsPaymentModalVisible(true)}
+              >
+                Registrar Pago
+              </Button>
+            )}
           </Space>
         </Card>
 
@@ -141,14 +229,141 @@ const AccountStatement = () => {
           </Card>
         )}
 
-        <Table
-          columns={columns}
-          dataSource={sales}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-        />
+        <Card title="Ventas Pendientes">
+          <Table
+            columns={columns}
+            dataSource={sales}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10 }}
+          />
+        </Card>
+
+        <Card title="Historial de Pagos">
+          <Table
+            columns={paymentColumns}
+            dataSource={payments}
+            rowKey="id"
+            pagination={{ pageSize: 10 }}
+          />
+        </Card>
       </Space>
+
+      <Modal
+        title="Registrar Pago"
+        open={isPaymentModalVisible}
+        onCancel={() => {
+          setIsPaymentModalVisible(false);
+          paymentForm.resetFields();
+        }}
+        footer={null}
+      >
+        <Form
+          form={paymentForm}
+          onFinish={handlePaymentSubmit}
+          layout="vertical"
+        >
+          <Form.Item
+            name="sale_id"
+            label="Venta (opcional)"
+          >
+            <Select
+              placeholder="Seleccionar venta"
+              allowClear
+            >
+              {sales.map(sale => (
+                <Select.Option key={sale.id} value={sale.id}>
+                  Venta #{sale.id} - ${sale.total_amount.toFixed(2)}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="amount"
+            label="Monto"
+            rules={[{ required: true, message: 'Por favor ingrese el monto' }]}
+          >
+            <InputNumber
+              style={{ width: '100%' }}
+              min={0}
+              step={0.01}
+              formatter={value => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+              parser={value => value.replace(/\$\s?|(,*)/g, '')}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="description"
+            label="Descripción"
+          >
+            <TextArea rows={4} />
+          </Form.Item>
+
+          <Form.Item>
+            <Button type="primary" htmlType="submit" block>
+              Registrar Pago
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`Detalles de Venta #${selectedSale?.id}`}
+        open={isSaleModalVisible}
+        onCancel={() => {
+          setIsSaleModalVisible(false);
+          setSelectedSale(null);
+        }}
+        footer={null}
+        width={800}
+      >
+        {selectedSale && (
+          <div>
+            <Descriptions bordered column={2}>
+              <Descriptions.Item label="Cliente" span={2}>
+                {selectedSale.customer.name}
+              </Descriptions.Item>
+              <Descriptions.Item label="Fecha">
+                {dayjs(selectedSale.created_at).format('DD/MM/YYYY HH:mm')}
+              </Descriptions.Item>
+              <Descriptions.Item label="Total">
+                ${selectedSale.total_amount.toFixed(2)}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Table
+              dataSource={selectedSale.items}
+              columns={[
+                {
+                  title: 'Producto',
+                  dataIndex: ['item', 'name'],
+                  key: 'name',
+                },
+                {
+                  title: 'Cantidad',
+                  dataIndex: 'quantity',
+                  key: 'quantity',
+                },
+                {
+                  title: 'Precio Unitario',
+                  dataIndex: 'unit_price',
+                  key: 'unit_price',
+                  render: (price) => `$${price.toFixed(2)}`,
+                },
+                {
+                  title: 'Subtotal',
+                  dataIndex: 'subtotal',
+                  key: 'subtotal',
+                  render: (subtotal) => `$${subtotal.toFixed(2)}`,
+                },
+              ]}
+              pagination={false}
+              rowKey="id"
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

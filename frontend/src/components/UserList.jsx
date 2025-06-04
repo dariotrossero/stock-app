@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Table, Button, Modal, Form, Input, Select, message, Space, Popconfirm } from 'antd';
 import { EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { api } from '../services/api';
@@ -8,6 +8,21 @@ const UserList = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [form] = Form.useForm();
   const [editingUser, setEditingUser] = useState(null);
+  const usernameInputRef = useRef(null);
+
+  useEffect(() => {
+    const handleKeyPress = (event) => {
+      if (event.ctrlKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault(); // Prevenir el comportamiento por defecto del navegador
+        handleAdd();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+    };
+  }, []); // El efecto solo se ejecuta una vez al montar el componente
 
   const fetchUsers = async () => {
     try {
@@ -66,6 +81,14 @@ const UserList = () => {
       message.error('Error al guardar el usuario');
     }
   };
+
+  useEffect(() => {
+    if (isModalVisible && !editingUser) {
+      setTimeout(() => {
+        usernameInputRef.current?.focus();
+      }, 100);
+    }
+  }, [isModalVisible, editingUser]);
 
   const columns = [
     {
@@ -146,14 +169,13 @@ const UserList = () => {
             label="Usuario"
             rules={[{ required: true, message: 'Por favor ingrese el nombre de usuario' }]}
           >
-            <Input />
+            <Input ref={usernameInputRef} />
           </Form.Item>
 
           <Form.Item
             name="email"
             label="Email"
             rules={[
-              { required: true, message: 'Por favor ingrese el email' },
               { type: 'email', message: 'Por favor ingrese un email válido' }
             ]}
           >
@@ -196,5 +218,38 @@ const UserList = () => {
     </div>
   );
 };
+
+const styles = `
+  .custom-form {
+    padding: 16px;
+  }
+  .form-group {
+    margin-bottom: 16px;
+  }
+  .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+  .ant-input {
+    width: 100%;
+    padding: 4px 11px;
+    border: 1px solid #d9d9d9;
+    border-radius: 2px;
+    transition: all 0.3s;
+  }
+  .ant-input:hover {
+    border-color: #40a9ff;
+  }
+  .ant-input:focus {
+    border-color: #40a9ff;
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+    outline: none;
+  }
+`;
+
+const styleSheet = document.createElement("style");
+styleSheet.innerText = styles;
+document.head.appendChild(styleSheet);
 
 export default UserList; 

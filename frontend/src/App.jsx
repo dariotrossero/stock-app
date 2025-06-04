@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Button, Badge, Tooltip } from 'antd';
+import { Layout, Menu, Button, Badge, Tooltip, message } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -12,7 +12,8 @@ import {
   WarningOutlined,
   LogoutOutlined,
   ExclamationCircleOutlined,
-  AccountBookOutlined
+  AccountBookOutlined,
+  SettingOutlined
 } from '@ant-design/icons';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -21,11 +22,18 @@ import ItemList from './components/ItemList';
 import SaleList from './components/SaleList';
 import UserList from './components/UserList';
 import AccountStatement from './components/AccountStatement';
+import Configuration from './components/Configuration';
 import AdminRoute from './components/AdminRoute';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './App.css';
 import { api } from './services/api';
-import { message } from 'antd';
+
+// Configurar el mensaje global
+message.config({
+  top: 100,
+  duration: 3,
+  maxCount: 3,
+});
 
 const { Header, Sider, Content } = Layout;
 
@@ -42,73 +50,103 @@ const ProtectedRoute = ({ children }) => {
 };
 
 const AppContent = () => {
+  // 1. Hooks de contexto y navegación
   const { isAuthenticated, user, logout, isAdmin, token } = useAuth();
-  console.log('AppContent - Current user:', user);
-  console.log('AppContent - Is admin:', isAdmin());
-  const [collapsed, setCollapsed] = useState(false);
-  const [lowStockItems, setLowStockItems] = useState([]);
   const navigate = useNavigate();
   const location = useLocation();
-  const isLoginPage = location.pathname === '/login';
+
+  // 2. Hooks de estado
+  const [collapsed, setCollapsed] = useState(false);
+  const [lowStockItems, setLowStockItems] = useState([]);
   const [selectedKey, setSelectedKey] = useState('dashboard');
+  const [lowStockThreshold, setLowStockThreshold] = useState(3);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    logout();
-    message.success('Sesión cerrada exitosamente');
-  };
+  // 3. Variables derivadas
+  const isLoginPage = location.pathname === '/login';
 
-  const fetchLowStockItems = async () => {
-    if (!token) {
-      console.log('No hay token disponible');
-      return;
+  // 4. Efectos
+  useEffect(() => {
+    if (!isAuthenticated() && !isLoginPage) {
+      navigate('/login');
     }
-
-    try {
-      console.log('Obteniendo items con stock bajo...');
-      const response = await api.get('/items/low-stock');
-      console.log('Respuesta del servidor:', response.status);
-      const data = response.data;
-      if (Array.isArray(data)) {
-        // Si es un array (vacío o no), simplemente lo seteamos y no mostramos error
-        setLowStockItems(data);
-        if (data.length === 0) {
-          console.log('No hay productos con stock bajo.');
-        } else {
-          console.log('Items con stock bajo recibidos:', data);
-        }
-      } else if (data && data.detail) {
-        // Si la respuesta es un error del backend
-        console.error('Error en la respuesta:', data.detail);
-        setLowStockItems([]);
-      } else {
-        // Otro caso inesperado
-        console.error('Respuesta inesperada:', data);
-        setLowStockItems([]);
-      }
-    } catch (error) {
-      console.error('Error al obtener items con stock bajo:', error);
-      setLowStockItems([]);
-    }
-  };
+  }, [isAuthenticated, isLoginPage, navigate]);
 
   useEffect(() => {
     if (isAuthenticated() && token) {
+      const fetchLowStockItems = async () => {
+        if (!token) {
+          console.log('No hay token disponible');
+          return;
+        }
+
+        try {
+          console.log('Obteniendo items con stock bajo...');
+          const response = await api.get('/items/low-stock');
+          console.log('Respuesta del servidor:', response.status);
+          const data = response.data;
+          if (Array.isArray(data)) {
+            setLowStockItems(data);
+            if (data.length === 0) {
+              console.log('No hay productos con stock bajo.');
+            } else {
+              console.log('Items con stock bajo recibidos:', data);
+            }
+          } else if (data && data.detail) {
+            console.error('Error en la respuesta:', data.detail);
+            setLowStockItems([]);
+          } else {
+            console.error('Respuesta inesperada:', data);
+            setLowStockItems([]);
+          }
+        } catch (error) {
+          console.error('Error al obtener items con stock bajo:', error);
+          setLowStockItems([]);
+        }
+      };
+
+      const fetchThreshold = async () => {
+        try {
+          const response = await api.get('/config/low-stock-threshold');
+          if (response.data && response.data.threshold) {
+            setLowStockThreshold(response.data.threshold);
+          }
+        } catch (error) {
+          console.error('Error al obtener el umbral de stock bajo:', error);
+        }
+      };
+
       console.log('Usuario autenticado, obteniendo items con stock bajo...');
       fetchLowStockItems();
-      // Actualizar cada 5 segundos en lugar de 30
+      fetchThreshold();
       const interval = setInterval(fetchLowStockItems, 5000);
       return () => clearInterval(interval);
     }
   }, [isAuthenticated, token]);
 
-  const menuItems = [
-    {
-      key: '/',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
-    },
+  // 5. Logs de depuración
+  console.log('AppContent - Current user:', user);
+  console.log('AppContent - Is admin:', isAdmin());
+
+  // 6. Renderizado condicional
+  if (isLoginPage) {
+    return <Login />;
+  }
+
+  if (!isAuthenticated()) {
+    return null;
+  }
+
+  // 7. Handlers
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    logout();
+    message.success('Sesión cerrada exitosamente');
+    navigate('/login');
+  };
+
+  // 8. Configuración del menú
+  const baseMenuItems = [
     {
       key: '/customers',
       icon: <UserOutlined />,
@@ -131,18 +169,29 @@ const AppContent = () => {
     },
   ];
 
-  if (isAdmin()) {
-    menuItems.push({
+  const adminMenuItems = [
+    {
+      key: '/',
+      icon: <DashboardOutlined />,
+      label: 'Dashboard',
+    },
+    {
       key: '/users',
       icon: <TeamOutlined />,
       label: 'Usuarios',
-    });
-  }
+    },
+    {
+      key: '/config',
+      icon: <SettingOutlined />,
+      label: 'Configuración',
+    },
+  ];
 
-  if (isLoginPage) {
-    return <Login />;
-  }
+  const menuItems = isAdmin() 
+    ? [...adminMenuItems, ...baseMenuItems]
+    : baseMenuItems;
 
+  // 9. Renderizado principal
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider trigger={null} collapsible collapsed={collapsed}>
@@ -177,11 +226,13 @@ const AppContent = () => {
           justifyContent: 'flex-end',
           gap: '16px'
         }}>
-          <Tooltip title={`${lowStockItems.length} productos con stock bajo (menos de 5 unidades)`}>
-            <Badge count={lowStockItems.length} style={{ backgroundColor: '#faad14' }}>
-              <WarningOutlined style={{ fontSize: '20px', color: '#faad14' }} />
-            </Badge>
-          </Tooltip>
+          {lowStockItems.length > 0 && (
+            <Tooltip title={`${lowStockItems.length} productos con stock bajo (menos de ${lowStockThreshold} unidades)`}>
+              <Badge count={lowStockItems.length} style={{ backgroundColor: '#faad14' }}>
+                <WarningOutlined style={{ fontSize: '20px', color: '#faad14' }} />
+              </Badge>
+            </Tooltip>
+          )}
           <span>Bienvenido, {user?.username}</span>
           <div style={{ paddingRight: '20px' }}>
             <Tooltip title="Cerrar Sesión">
@@ -204,9 +255,9 @@ const AppContent = () => {
             <Route
               path="/"
               element={
-                <ProtectedRoute>
+                <AdminRoute>
                   <Dashboard />
-                </ProtectedRoute>
+                </AdminRoute>
               }
             />
             <Route
@@ -246,6 +297,14 @@ const AppContent = () => {
               element={
                 <AdminRoute>
                   <UserList />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/config"
+              element={
+                <AdminRoute>
+                  <Configuration />
                 </AdminRoute>
               }
             />

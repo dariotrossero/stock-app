@@ -10,7 +10,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
@@ -34,6 +34,7 @@ class Customer(Base):
 
     # Add relationship to sales
     sales = relationship("Sale", back_populates="customer")
+    payments = relationship("Payment", back_populates="customer")
 
 
 class Item(Base):
@@ -67,6 +68,7 @@ class Sale(Base):
     user = relationship("User", back_populates="sales")
     items = relationship("SaleItem", back_populates="sale",
                          cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="sale")
 
 
 class SaleItem(Base):
@@ -94,3 +96,29 @@ class StockUpdate(Base):
 
     # Add relationship to item
     item = relationship("Item", back_populates="stock_updates")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"))
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    amount = Column(Float, nullable=False)
+    description = Column(String, nullable=True)
+    payment_date = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    customer = relationship("Customer", back_populates="payments")
+    sale = relationship("Sale", back_populates="payments")
+
+
+class Configuration(Base):
+    __tablename__ = "configurations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, index=True)
+    value = Column(String)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

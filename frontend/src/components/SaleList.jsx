@@ -77,8 +77,18 @@ const SaleList = () => {
           user: sale.user,
           items: sale.items,
           total_amount: sale.total_amount,
-          created_at: sale.created_at
+          created_at: sale.created_at,
+          paid: sale.paid,
+          payments: sale.payments
         });
+        if (sale.payments && sale.payments.length > 0) {
+          console.log("Payments for sale", sale.id, ":", sale.payments);
+          console.log("Last payment date:", sale.payments[sale.payments.length - 1].payment_date);
+          console.log("Last payment amount:", sale.payments[sale.payments.length - 1].amount);
+          console.log("Last payment description:", sale.payments[sale.payments.length - 1].description);
+        } else {
+          console.log("No payments for sale", sale.id);
+        }
       });
       
       setSales(data);
@@ -443,6 +453,24 @@ const SaleList = () => {
   };
 
   const showSaleDetails = (sale) => {
+    console.log('Sale details:', {
+      id: sale.id,
+      customer: sale.customer,
+      user: sale.user,
+      total_amount: sale.total_amount,
+      created_at: sale.created_at,
+      paid: sale.paid,
+      payments: sale.payments
+    });
+    console.log('Payments array:', sale.payments);
+    if (sale.payments && sale.payments.length > 0) {
+      console.log('Last payment:', sale.payments[sale.payments.length - 1]);
+      console.log('Last payment date:', sale.payments[sale.payments.length - 1].payment_date);
+      console.log('Last payment amount:', sale.payments[sale.payments.length - 1].amount);
+      console.log('Last payment description:', sale.payments[sale.payments.length - 1].description);
+    } else {
+      console.log('No payments found for this sale');
+    }
     setSelectedSale(sale);
     setIsDetailsModalVisible(true);
   };
@@ -595,6 +623,22 @@ const SaleList = () => {
               <Descriptions.Item label="Estado de Pago">
                 <Badge status={selectedSale.paid ? "success" : "warning"} text={selectedSale.paid ? "Pagado" : "Pendiente"} />
               </Descriptions.Item>
+              {selectedSale.paid && selectedSale.payments && selectedSale.payments.length > 0 && (
+                <Descriptions.Item label="Fecha de Pago">{
+                  (() => {
+                    const lastPayment = selectedSale.payments[selectedSale.payments.length - 1];
+                    const date = new Date(lastPayment.payment_date);
+                    // Ajustar a GMT-3
+                    date.setHours(date.getHours() - date.getTimezoneOffset() / 60 - 3);
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const year = date.getFullYear();
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    return `${day}/${month}/${year} ${hours}:${minutes}`;
+                  })()
+                }</Descriptions.Item>
+              )}
             </Descriptions>
 
             <div style={{ marginTop: 24 }}>

@@ -5,12 +5,16 @@ import {
   ShoppingCartOutlined,
   ShoppingOutlined,
   DollarOutlined,
-  RiseOutlined
+  RiseOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import { api } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import MonthlyStats from './MonthlyStats';
 import TopProducts from './TopProducts';
+import { Table } from 'antd';
 
 const { Title } = Typography;
 
@@ -23,6 +27,10 @@ const Dashboard = () => {
     total_customers: 0,
     total_items: 0
   });
+  const [monthlyStats, setMonthlyStats] = useState(null);
+  const [topProducts, setTopProducts] = useState([]);
+  const [lowStockItems, setLowStockItems] = useState([]);
+  const [topDebtors, setTopDebtors] = useState([]);
 
   const formatCurrency = (value) => {
     if (value >= 1000000) {
@@ -32,6 +40,7 @@ const Dashboard = () => {
     }
     return `$${value.toFixed(2)}`;
   };
+
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -71,6 +80,28 @@ const Dashboard = () => {
     fetchStats();
   }, []);
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      const [statsRes, productsRes, lowStockRes, debtorsRes] = await Promise.all([
+        api.get('/stats/monthly'),
+        api.get('/stats/top-products'),
+        api.get('/items/low-stock'),
+        api.get('/stats/top-debtors')
+      ]);
+
+      setMonthlyStats(statsRes.data);
+      setTopProducts(productsRes.data);
+      setLowStockItems(lowStockRes.data);
+      setTopDebtors(debtorsRes.data);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -78,6 +109,52 @@ const Dashboard = () => {
       </div>
     );
   }
+
+  const topProductsColumns = [
+    {
+      title: 'Producto',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: 'Cantidad Vendida',
+      dataIndex: 'total_quantity',
+      key: 'total_quantity',
+    },
+    {
+      title: 'Total Vendido',
+      dataIndex: 'total_amount',
+      key: 'total_amount',
+      render: (amount) => `$${amount.toFixed(2)}`,
+    },
+  ];
+
+  const lowStockColumns = [
+    {
+      title: 'Producto',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: 'Stock Actual',
+      dataIndex: 'stock',
+      key: 'stock',
+    },
+  ];
+
+  const debtorsColumns = [
+    {
+      title: 'Cliente',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: 'Deuda Total',
+      dataIndex: 'total_debt',
+      key: 'total_debt',
+      render: (amount) => `$${amount.toFixed(2)}`,
+    },
+  ];
 
   return (
     <div style={{ padding: '24px' }}>
@@ -145,6 +222,84 @@ const Dashboard = () => {
       <Row gutter={[16, 16]} style={{ marginTop: '24px' }}>
         <Col span={24}>
           <TopProducts />
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: '24px' }}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Ventas del Mes"
+              value={monthlyStats?.total_sales || 0}
+              prefix={<ShoppingCartOutlined />}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Ingresos del Mes"
+              value={monthlyStats?.total_income || 0}
+              precision={2}
+              prefix={<DollarOutlined />}
+              formatter={(value) => `$${value}`}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Productos con Stock Bajo"
+              value={lowStockItems.length}
+              prefix={<WarningOutlined />}
+              valueStyle={{ color: '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Total Clientes"
+              value={topDebtors.length}
+              prefix={<UserOutlined />}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+        <Col xs={24} lg={12}>
+          <Card title="Productos Más Vendidos">
+            <Table
+              dataSource={topProducts}
+              columns={topProductsColumns}
+              rowKey="id"
+              pagination={false}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="Productos con Stock Bajo">
+            <Table
+              dataSource={lowStockItems}
+              columns={lowStockColumns}
+              rowKey="id"
+              pagination={false}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+        <Col xs={24}>
+          <Card title="Clientes con Mayor Deuda">
+            <Table
+              dataSource={topDebtors}
+              columns={debtorsColumns}
+              rowKey="id"
+              pagination={false}
+            />
+          </Card>
         </Col>
       </Row>
     </div>

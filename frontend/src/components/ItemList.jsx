@@ -521,6 +521,15 @@ const ItemList = () => {
         <div style={{ display: 'flex', gap: '8px' }}>
           <Button
             type="primary"
+            icon={<ExclamationCircleOutlined />}
+            onClick={() => setIsStockModalVisible(true)}
+            disabled={lowStockItems.length === 0}
+            style={{ backgroundColor: lowStockItems.length > 0 ? '#faad14' : undefined }}
+          >
+            Stock Bajo ({lowStockItems.length})
+          </Button>
+          <Button
+            type="primary"
             icon={<InboxOutlined />}
             onClick={() => setIsStockUpdateModalVisible(true)}
           >

@@ -42,6 +42,7 @@ export const AuthProvider = ({ children }) => {
       
       const userData = await response.json();
       console.log('Datos del usuario obtenidos:', userData);
+      console.log('¿Es admin?:', userData.is_admin);
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
     } catch (error) {
@@ -76,21 +77,9 @@ export const AuthProvider = ({ children }) => {
       }
 
       setToken(data.access_token);
-      
-      // Obtener datos del usuario después del login
-      const userResponse = await fetch('http://localhost:8000/users/me', {
-        headers: {
-          'Authorization': `Bearer ${data.access_token}`
-        }
-      });
-      
-      if (!userResponse.ok) {
-        throw new Error('Error al obtener datos del usuario');
-      }
-      
-      const userData = await userResponse.json();
-      console.log('Datos del usuario obtenidos:', userData);
-      setUser(userData);
+      setUser(data.user);
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
       
       return true;
     } catch (error) {
@@ -106,14 +95,22 @@ export const AuthProvider = ({ children }) => {
   };
 
   const isAuthenticated = () => {
-    const isAuth = !!token;
+    const isAuth = !!token && !!user;
     console.log('Verificando autenticación:', isAuth);
+    if (!isAuth) {
+      // Limpiar datos si no está autenticado
+      setToken(null);
+      setUser(null);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
     return isAuth;
   };
 
   const isAdmin = () => {
     const admin = user?.is_admin === true;
     console.log('Verificando si es admin:', admin);
+    console.log('Datos del usuario:', user);
     return admin;
   };
 

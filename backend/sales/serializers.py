@@ -2,6 +2,13 @@ from rest_framework import serializers
 from .models import Sale, SaleItem
 from customers.serializers import CustomerSerializer
 from items.serializers import ItemSerializer
+from app.models import Payment
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = ['id', 'amount', 'payment_date', 'description']
 
 
 class SaleItemSerializer(serializers.ModelSerializer):
@@ -17,10 +24,12 @@ class SaleItemSerializer(serializers.ModelSerializer):
 class SaleSerializer(serializers.ModelSerializer):
     items = SaleItemSerializer(many=True, read_only=True)
     customer = CustomerSerializer(read_only=True)
+    payments = PaymentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Sale
-        fields = ['id', 'customer', 'total_amount', 'created_at', 'items']
+        fields = ['id', 'customer', 'total_amount',
+                  'created_at', 'items', 'paid', 'payments']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

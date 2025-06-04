@@ -104,7 +104,12 @@ async def login_for_access_token(
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user": user
+            "user": {
+                "username": user.username,
+                "email": user.email,
+                "is_active": user.is_active,
+                "is_admin": user.is_admin
+            }
         }
     except Exception as e:
         logger.error(f"Error en login: {str(e)}")
@@ -269,12 +274,14 @@ def create_customer(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
-    db_customer = crud.get_customer_by_email(db, email=customer.email)
-    if db_customer:
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
-        )
+    # Solo validar email si se proporciona uno
+    if customer.email and customer.email.strip():
+        db_customer = crud.get_customer_by_email(db, email=customer.email)
+        if db_customer:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered"
+            )
     return crud.create_customer(db=db, customer=customer)
 
 
@@ -380,27 +387,16 @@ def read_items(
 @app.get("/items/low-stock", response_model=List[schemas.Item])
 def get_low_stock_items(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
+    current_user: models.User = Depends(get_current_active_user)
 ):
-    """Obtener items con stock bajo (menos de 3 unidades)"""
-    try:
-        logger.info("Obteniendo items con stock bajo...")
-        # Query directa para obtener items con stock bajo
-        low_stock_items = db.query(models.Item).filter(
-            models.Item.stock < 3).all()
-        logger.info(
-            f"Items con stock bajo encontrados: {len(low_stock_items)}")
-        for item in low_stock_items:
-            logger.info(f"Item: {item.name}, Stock: {item.stock}")
+    # Obtener el umbral configurado
+    config = crud.get_configuration(db, "low_stock_threshold")
+    # Valor por defecto si no hay configuración
+    threshold = int(config.value) if config else 3
 
-        return low_stock_items
-    except Exception as e:
-        logger.error(f"Error al obtener items con stock bajo: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail="Error al obtener items con stock bajo"
-        )
+    # Obtener items con stock bajo
+    items = db.query(models.Item).filter(models.Item.stock < threshold).all()
+    return items
 
 
 @app.get("/items/{item_id}", response_model=schemas.Item)
@@ -461,6 +457,17 @@ def get_sales(
             logger.info(f"Items: {len(sale.items)}")
             logger.info(f"Total: {sale.total_amount}")
             logger.info(f"Created at: {sale.created_at}")
+            logger.info(f"Paid status: {sale.paid}")
+            logger.info(f"Payments count: {len(sale.payments)}")
+            if sale.payments:
+                logger.info("Payments details:")
+                for payment in sale.payments:
+                    logger.info(f"  - Payment ID: {payment.id}")
+                    logger.info(f"    Amount: {payment.amount}")
+                    logger.info(f"    Date: {payment.payment_date}")
+                    logger.info(f"    Description: {payment.description}")
+                    logger.info(f"    Sale ID: {payment.sale_id}")
+                    logger.info(f"    Customer ID: {payment.customer_id}")
             logger.info("-"*30)
         logger.info("="*50)
         return sales
@@ -572,7 +579,7 @@ def load_dummy_data(current_user: models.User = Depends(get_current_user)):
 @app.get("/stats/top-products", response_model=List[schemas.TopProduct])
 def get_top_products(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
+    current_user: models.User = Depends(get_current_admin_user)
 ):
     try:
         # Obtener los 3 productos más vendidos
@@ -615,7 +622,7 @@ def get_top_products(
 @app.get("/stats/monthly", response_model=schemas.MonthlyStats)
 def get_monthly_stats(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
+    current_user: models.User = Depends(get_current_admin_user)
 ):
     try:
         # Obtener la fecha de hace un mes
@@ -669,6 +676,170 @@ def create_stock_update(
     if db_stock_update is None:
         raise HTTPException(status_code=404, detail="Item not found")
     return db_stock_update
+
+
+@app.get("/stats/top-debtors", response_model=List[schemas.TopDebtor])
+def get_top_debtors(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
+):
+    try:
+        # Obtener los 5 clientes con mayor deuda
+        top_debtors = db.query(
+            models.Customer.id,
+            models.Customer.name,
+            func.sum(models.Sale.total_amount).label('total_debt')
+        ).join(
+            models.Sale,
+            models.Customer.id == models.Sale.customer_id
+        ).filter(
+            models.Sale.paid == False
+        ).group_by(
+            models.Customer.id,
+            models.Customer.name
+        ).order_by(
+            func.sum(models.Sale.total_amount).desc()
+        ).limit(5).all()
+
+        # Convertir los resultados a diccionarios
+        result = [
+            {
+                "id": debtor.id,
+                "name": debtor.name,
+                "total_debt": float(debtor.total_debt)
+            }
+            for debtor in top_debtors
+        ]
+
+        return result
+    except Exception as e:
+        logging.error(f"Error al obtener clientes con mayor deuda: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener clientes con mayor deuda: {str(e)}"
+        )
+
+
+@app.get("/customers/{customer_id}/payments/", response_model=List[schemas.Payment])
+def get_customer_payments(
+    customer_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    # Verificar que el cliente existe
+    customer = crud.get_customer(db, customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    return crud.get_customer_payments(db, customer_id=customer_id, skip=skip, limit=limit)
+
+
+@app.get("/customers/{customer_id}/pending-sales/", response_model=List[schemas.Sale])
+def get_customer_pending_sales(
+    customer_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Get all pending (unpaid) sales for a specific customer.
+
+    Args:
+        customer_id: ID of the customer
+        skip: Number of records to skip (for pagination)
+        limit: Maximum number of records to return (for pagination)
+
+    Returns:
+        List of pending sales for the customer
+    """
+    # Verificar que el cliente existe
+    customer = crud.get_customer(db, customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    return crud.get_pending_sales_by_customer(db, customer_id=customer_id, skip=skip, limit=limit)
+
+
+@app.post("/payments/", response_model=schemas.Payment)
+def create_payment(
+    payment: schemas.PaymentCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Create a new payment.
+
+    Args:
+        payment: Payment data including customer_id, sale_id (optional), amount, and description
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        Created payment object
+    """
+    try:
+        # Verificar que el cliente existe
+        customer = crud.get_customer(db, payment.customer_id)
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        # Si hay una venta asociada, verificar que existe
+        if payment.sale_id:
+            sale = crud.get_sale(db, payment.sale_id)
+            if not sale:
+                raise HTTPException(status_code=404, detail="Sale not found")
+            # Verificar que la venta pertenece al cliente
+            if sale.customer_id != payment.customer_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="The sale does not belong to the specified customer"
+                )
+
+        return crud.create_payment(db, payment)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating payment: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating payment: {str(e)}"
+        )
+
+
+@app.get("/config/low-stock-threshold", response_model=schemas.LowStockThreshold)
+def get_low_stock_threshold(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
+):
+    config = crud.get_configuration(db, "low_stock_threshold")
+    if not config:
+        # Si no existe la configuración, crear con valor por defecto
+        config = crud.create_or_update_configuration(
+            db,
+            "low_stock_threshold",
+            "3",
+            "Umbral mínimo de stock para alertas"
+        )
+    return {"threshold": int(config.value)}
+
+
+@app.post("/config/low-stock-threshold", response_model=schemas.LowStockThreshold)
+def update_low_stock_threshold(
+    threshold: schemas.LowStockThreshold,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
+):
+    config = crud.create_or_update_configuration(
+        db,
+        "low_stock_threshold",
+        str(threshold.threshold),
+        "Umbral mínimo de stock para alertas"
+    )
+    return {"threshold": int(config.value)}
 
 
 if __name__ == "__main__":

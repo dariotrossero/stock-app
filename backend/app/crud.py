@@ -26,7 +26,7 @@ def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = get_password_hash(user.password)
     db_user = models.User(
         username=user.username,
-        email=user.email,
+        email=user.email if user.email else None,
         hashed_password=hashed_password,
         is_active=user.is_active,
         is_admin=user.is_admin
@@ -181,9 +181,34 @@ def delete_item(db: Session, item_id: int):
 
 # Sale CRUD operations
 def get_sale(db: Session, sale_id: int):
-    return db.query(models.Sale).options(
-        joinedload(models.Sale.customer)
+    sale = db.query(models.Sale).options(
+        joinedload(models.Sale.customer),
+        joinedload(models.Sale.user),
+        joinedload(models.Sale.items).joinedload(models.SaleItem.item),
+        joinedload(models.Sale.payments)
     ).filter(models.Sale.id == sale_id).first()
+
+    if sale:
+        print(f"\nSale details for ID {sale_id}:")
+        print(
+            f"Customer: {sale.customer.name if sale.customer else 'No customer'}")
+        print(f"User: {sale.user.username if sale.user else 'No user'}")
+        print(f"Items count: {len(sale.items)}")
+        print(f"Total amount: {sale.total_amount}")
+        print(f"Created at: {sale.created_at}")
+        print(f"Paid status: {sale.paid}")
+        print(f"Payments count: {len(sale.payments)}")
+        if sale.payments:
+            print("Payments details:")
+            for payment in sale.payments:
+                print(f"  - Payment ID: {payment.id}")
+                print(f"    Amount: {payment.amount}")
+                print(f"    Date: {payment.payment_date}")
+                print(f"    Description: {payment.description}")
+                print(f"    Sale ID: {payment.sale_id}")
+                print(f"    Customer ID: {payment.customer_id}")
+
+    return sale
 
 
 def get_sales(db: Session, skip: int = 0, limit: int = 100):
@@ -202,7 +227,8 @@ def get_sales(db: Session, skip: int = 0, limit: int = 100):
             .options(
                 joinedload(models.Sale.customer),
                 joinedload(models.Sale.user),
-                joinedload(models.Sale.items).joinedload(models.SaleItem.item)
+                joinedload(models.Sale.items).joinedload(models.SaleItem.item),
+                joinedload(models.Sale.payments)
             )
             .order_by(models.Sale.created_at.desc())
             .offset(skip)
@@ -227,6 +253,17 @@ def get_sales(db: Session, skip: int = 0, limit: int = 100):
             print(f"Items count: {len(sale.items)}")
             print(f"Total amount: {sale.total_amount}")
             print(f"Created at: {sale.created_at}")
+            print(f"Paid status: {sale.paid}")
+            print(f"Payments count: {len(sale.payments)}")
+            if sale.payments:
+                print("Payments details:")
+                for payment in sale.payments:
+                    print(f"  - Payment ID: {payment.id}")
+                    print(f"    Amount: {payment.amount}")
+                    print(f"    Date: {payment.payment_date}")
+                    print(f"    Description: {payment.description}")
+                    print(f"    Sale ID: {payment.sale_id}")
+                    print(f"    Customer ID: {payment.customer_id}")
 
             # Filtrar items inválidos
             valid_items = [
@@ -244,6 +281,57 @@ def get_sales(db: Session, skip: int = 0, limit: int = 100):
 
     except Exception as e:
         print(f"Error in get_sales: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return []
+
+
+def get_pending_sales_by_customer(db: Session, customer_id: int, skip: int = 0, limit: int = 100):
+    """
+    Get all pending (unpaid) sales for a specific customer.
+
+    Args:
+        db: Database session
+        customer_id: ID of the customer
+        skip: Number of records to skip (for pagination)
+        limit: Maximum number of records to return (for pagination)
+
+    Returns:
+        List of pending sales for the customer
+    """
+    try:
+        query = (
+            db.query(models.Sale)
+            .options(
+                joinedload(models.Sale.customer),
+                joinedload(models.Sale.user),
+                joinedload(models.Sale.items).joinedload(models.SaleItem.item),
+                joinedload(models.Sale.payments)
+            )
+            .filter(
+                models.Sale.customer_id == customer_id,
+                models.Sale.paid == False
+            )
+            .order_by(models.Sale.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+
+        sales = query.all()
+
+        # Process each sale to ensure valid items
+        valid_sales = []
+        for sale in sales:
+            valid_items = [
+                item for item in sale.items if item.item is not None]
+            if len(valid_items) != len(sale.items):
+                sale.items = valid_items
+            valid_sales.append(sale)
+
+        return valid_sales
+
+    except Exception as e:
+        print(f"Error in get_pending_sales_by_customer: {str(e)}")
         import traceback
         print(traceback.format_exc())
         return []
@@ -401,3 +489,56 @@ def create_stock_update(db: Session, stock_update: schemas.StockUpdateCreate):
     db.commit()
     db.refresh(db_stock_update)
     return db_stock_update
+
+
+def create_payment(db: Session, payment: schemas.PaymentCreate):
+    db_payment = models.Payment(**payment.dict())
+    db.add(db_payment)
+
+    # Si el pago está asociado a una venta, verificar si se completó el pago
+    if payment.sale_id:
+        sale = db.query(models.Sale).filter(
+            models.Sale.id == payment.sale_id).first()
+        if sale:
+            # Calcular el total pagado para esta venta
+            total_paid = db.query(func.sum(models.Payment.amount)).filter(
+                models.Payment.sale_id == sale.id
+            ).scalar() or 0
+
+            # Si el total pagado es mayor o igual al total de la venta, marcar como pagada
+            if total_paid + payment.amount >= sale.total_amount:
+                sale.paid = True
+
+    db.commit()
+    db.refresh(db_payment)
+    return db_payment
+
+
+def get_customer_payments(db: Session, customer_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Payment).filter(
+        models.Payment.customer_id == customer_id
+    ).order_by(
+        models.Payment.payment_date.desc()
+    ).offset(skip).limit(limit).all()
+
+
+def get_configuration(db: Session, key: str):
+    return db.query(models.Configuration).filter(models.Configuration.key == key).first()
+
+
+def create_or_update_configuration(db: Session, key: str, value: str, description: str = None):
+    config = get_configuration(db, key)
+    if config:
+        config.value = value
+        if description:
+            config.description = description
+    else:
+        config = models.Configuration(
+            key=key,
+            value=value,
+            description=description
+        )
+        db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config

@@ -5,7 +5,7 @@ from typing import Optional, List
 
 class UserBase(BaseModel):
     username: str
-    email: str
+    email: Optional[str] = None
     is_active: bool = True
     is_admin: bool = False
 
@@ -122,6 +122,28 @@ class SaleItem(SaleItemBase):
         from_attributes = True
 
 
+# Payment schemas
+class PaymentBase(BaseModel):
+    customer_id: int
+    sale_id: Optional[int] = None
+    amount: float
+    description: Optional[str] = None
+
+
+class PaymentCreate(PaymentBase):
+    pass
+
+
+class Payment(BaseModel):
+    id: int
+    amount: float
+    payment_date: datetime
+    description: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 # Sale schemas
 class SaleBase(BaseModel):
     customer_id: int
@@ -146,6 +168,7 @@ class Sale(SaleBase):
     customer: Customer
     user: User
     paid: bool
+    payments: List[Payment]
 
     class Config:
         from_attributes = True
@@ -182,3 +205,35 @@ class StockUpdate(StockUpdateBase):
 
     class Config:
         from_attributes = True
+
+
+class TopDebtor(BaseModel):
+    id: int
+    name: str
+    total_debt: float
+
+    class Config:
+        from_attributes = True
+
+
+class ConfigurationBase(BaseModel):
+    key: str
+    value: str
+    description: Optional[str] = None
+
+
+class ConfigurationCreate(ConfigurationBase):
+    pass
+
+
+class Configuration(ConfigurationBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class LowStockThreshold(BaseModel):
+    threshold: int
